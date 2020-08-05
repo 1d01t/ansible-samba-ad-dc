@@ -17,13 +17,15 @@ Modify the project to fit your needs
 
 smb.conf is configured to use the AD backend.
 Therefore we need 
+
   - uidNumber
   - gidNumber
+
 for each new user.
 
-Furthermore there is a posibility to place a powershell login-script for each user at:
+Furthermore there is a posibility to place a powershell login-script <username>.ps1 for each user at:
+
   - /var/lib/samba/sysvol/solarsystem.mind-galaxy.net/scripts
-Name is <username>.ps1
 
 Samba is preconfigured to set roaming profiles for new users.
 Just set the parameter, when creating users
