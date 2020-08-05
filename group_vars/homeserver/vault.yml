@@ -1,0 +1,4 @@
+    vault_root_password_dc: s3cr3t
+    vault_samba_admin_pw: s3cr3t
+    vault_samba_adminuser_pw: s3cr3t
+

@@ -1,0 +1,287 @@
+---
+#required for pwd hashing --> pip install passlib
+- hosts: domain_controller
+  remote_user: root
+  vars: 
+    required_packages: 
+      - tasksel
+      - ntp
+      - ntpstat
+      - ca-certificates
+      - dnsutils
+      - ldb-tools
+      - wget 
+      - htop
+      - acl
+      - host
+      - parted
+      - nfs-common
+      - pigz
+      - nano
+      - bind9
+      - bind9utils
+      - samba
+      - smbclient
+      - krb5-config
+      - krb5-user
+      - libpam-krb5 
+      - winbind
+      - libpam-winbind
+      - libnss-winbind
+  gather_facts: false
+  pre_tasks:
+  - name: Install python for Ansible
+    raw: bash -c "(apt -qqy update && apt install -qqy python python-apt)"
+    register: output
+    changed_when: output.stdout != ""
+  - name: Gathering Facts
+    setup:
+  tasks:
+  - name: show gatherin facts
+    debug:
+      msg: "{{ ansible_default_ipv4.address }}"
+  - name: ensure .ssh is present
+    file:
+      path: "/root/.ssh"
+      state: directory   
+  - name: enable root login
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^PermitRootLogin yes'
+      line: 'PermitRootLogin prohibit-password'
+  - name: deny login with pam
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^#ChallengeResponseAuthentication yes'
+      line: 'ChallengeResponseAuthentication no'
+  - name: deny login with password
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^#PasswordAuthentication no'
+      line: 'PasswordAuthentication no'
+  - name: update debian
+    apt:
+      update_cache: yes
+      upgrade: yes
+  - name: dist debian
+    apt:
+      upgrade: dist
+  - name: install required packages
+    apt: 
+      name: "{{ required_packages }}" 
+      state: present
+      update_cache: yes
+  - name: set Hostname
+    shell: hostname {{ vars_name_dc }}.{{ vars_subdomain }}.{{ vars_domain }}
+  - name: generate hash pass for root
+    delegate_to: localhost
+    command:  python -c "from passlib.hash import sha512_crypt; import getpass; print(sha512_crypt.hash('{{ vault_root_password_nextcloud }}'))"
+    register: hash
+  - name: change root password
+    user: 
+      name: root
+      update_password: always 
+      password: '{{ hash.stdout }}'  
+  - name: copy hosts file
+    template: 
+      src: "hosts"
+      dest: "/etc/hosts"
+  - name: copy interfaces file
+    template: 
+      src: "interfaces"
+      dest: "/etc/network/interfaces"      
+  - name: Check if Samba Provisioning is already in place
+    stat:
+      path: "/etc/samba/smb.conf.DEFAULT"
+    register: smb_conf
+  - name: move original smb.conf, if no Provisioning is in place
+    shell: mv /etc/samba/smb.conf /etc/samba/smb.conf.DEFAULT
+    when: not smb_conf.stat.exists
+  - name: Ensure Provisioning Samba AD is done
+    shell: samba-tool domain provision --server-role=dc --use-rfc2307 --dns-backend=BIND9_DLZ --realm={{ vars_realm }} --domain={{ vars_workgroup }} --adminpass={{ vault_samba_admin_pw }}
+    when: not smb_conf.stat.exists
+  - name: cenerate cert for LDAPS
+    shell: openssl req -newkey rsa:4096 -keyout myKey.pem -nodes -x509 -days 10950 -out /var/lib/samba/private/tls/cert.{{ vars_name_dc }}.{{ vars_subdomain }}.{{ vars_domain }}.pem -keyout /var/lib/samba/private/tls/key.{{ vars_name_dc }}.{{ vars_subdomain }}.{{ vars_domain }}.pem -subj "/C=DE/ST=RPL/L=Mannheim/O=MIND-GALAXY/CN=sun.solarsystem.mind-galaxy.net"
+    when: not smb_conf.stat.exists
+  - name: copy modifyed smb.conf
+    template: 
+      src: "smb.conf"
+      dest: "/etc/samba/smb.conf" 
+  - name: copy named.conf.options file
+    template: 
+      src: "named.conf.options"
+      dest: "/etc/bind/named.conf.options"  
+  - name: copy named.conf.local file
+    template:
+      src: "named.conf.local"
+      dest: "/etc/bind/named.conf.local"
+  - name: Change file ownership, group and permissions of /var/lib/samba/bind-dns/dns.keytab
+    file:
+      name: /var/lib/samba/bind-dns/dns.keytab
+      owner: root
+      group: bind
+      mode: '0640'
+      recurse: no
+      state: file      
+  - name: Change file ownership, group and permissions of /var/lib/samba/bind-dns
+    file:
+      path: /var/lib/samba/bind-dns
+      owner: root
+      group: bind
+      mode: '0770'
+      recurse: no
+      state: directory
+  - name: Create /etc/systemd/system/bind9.service.d if it does not exist
+    file:
+      path: /etc/systemd/system/bind9.service.d
+      state: directory
+      mode: '0755'
+      owner: "root"
+      group: "root"
+  - name: disable reload bind9 in systemd service
+    template: 
+      src: "bind9_override.conf"
+      dest: "/etc/systemd/system/bind9.service.d/override.conf"       
+  - name: Create /etc/systemd/system/samba-ad-dc.service.d if it does not exist
+    file:
+      path: /etc/systemd/system/samba-ad-dc.service.d
+      state: directory
+      mode: '0755'
+      owner: "root"
+      group: "root"
+  - name: load samba after bind in systemd service
+    template: 
+      src: "samba-ad-dc_override.conf"
+      dest: "/etc/systemd/system/samba-ad-dc.service.d/override.conf"
+  - name: enable and start bind9
+    service:
+      name: bind9
+      enabled: yes
+      state: started      
+  - name: Configuring the DNS Resolver
+    template: 
+      src: "resolv.conf"
+      dest: "/etc/resolv.conf"
+  - name: add write protection to /etc/resolv.conf
+    shell: chattr +i /etc/resolv.conf
+  - name: copy file krb5.conf to /etc/krb5.conf
+    copy:
+      src: /var/lib/samba/private/krb5.conf
+      dest: /etc
+      remote_src: yes
+  - name: Change file ownership, group and permissions of /etc/krb5.conf
+    file:
+      path: /etc/krb5.conf
+      owner: root
+      group: bind
+      mode: '0640'
+      recurse: no
+      state: file
+  - name: stop smbd nmbd winbind 
+    shell: systemctl stop smbd nmbd winbind 
+  - name: disable smbd nmbd winbind 
+    shell: systemctl disable smbd nmbd winbind
+  - name: unmask samba-ad-dc 
+    shell: systemctl unmask samba-ad-dc
+  - name: enable and start samba-ad-dc
+    service:
+      name: samba-ad-dc
+      enabled: yes
+      state: started
+  - name: Set timezone to UTC
+    timezone:
+      name: UTC
+  - name: Change file ownership, group and permissions of /var/lib/samba/ntp_signd/
+    file:
+      path: /var/lib/samba/ntp_signd
+      owner: root
+      group: ntp
+      mode: '0750'
+      recurse: yes 
+      state: directory
+  - name: configure ntp
+    template: 
+      src: "ntp.conf"
+      dest: "/etc/ntp.conf"
+  - name: restart ntp
+    service:
+      name: ntp
+      state: restarted
+  - name: copy login.bat as logon script. Loads powershell as base64 string
+    template: 
+      src: "login.bat"
+      dest: "/var/lib/samba/sysvol/solarsystem.mind-galaxy.net/scripts/login.bat" 
+      owner: root
+      group: root
+      mode: u=rwx,g=rx,o=rx
+  - name: copy admin.ps1 the real loging powershell script
+    template: 
+      src: "admin.ps1"
+      dest: "/var/lib/samba/sysvol/solarsystem.mind-galaxy.net/scripts/admin.ps1" 
+      owner: root
+      group: root
+      mode: u=rw,g=r,o=r
+  - name: Check if samba Unix Admins group already has gidNumber
+    shell: "ldbsearch -H /var/lib/samba/private/sam.ldb '(CN=Unix Admins)' gidNumber"
+    register: gidNumber1_exist
+  - name: Create new samba group Unix Admins
+    shell: "samba-tool group add 'Unix Admins' --nis-domain {{ vars_workgroup }} --gid-number={{ vars_DomainUnixAdminGroup_gid }}"
+    when: not gidNumber1_exist.stdout.find('gidNumber') != -1
+  - name: Add Unix Admins Group to Administrators
+    shell: "samba-tool group addmembers 'Administrators' 'Unix Admins'"  
+    when: not gidNumber1_exist.stdout.find('gidNumber') != -1
+  - name: Grant Unix Admins SeDiskOperatorPrivilege
+    shell: "net rpc rights grant '{{ vars_workgroup }}\\Unix Admins' SeDiskOperatorPrivilege -U '{{ vars_workgroup }}\\administrator'%{{ vault_samba_admin_pw }}"
+    when: not gidNumber1_exist.stdout.find('gidNumber') != -1
+  - name: Check if samba Domain Users group already has gidNumber
+    shell: "ldbsearch -H /var/lib/samba/private/sam.ldb '(CN=Domain Users)' gidNumber"
+    register: gidNumber2_exist
+  - name: execute ldbmodify to add gidNumber to Domain Users group 
+    shell:
+      cmd: |
+        ldbmodify -H /var/lib/samba/private/sam.ldb <<EOF
+        dn: CN=Domain Users,CN=Users,DC={{ vars_workgroup }},DC={{ vars_subdomain }},DC={{ vars_domain }}
+        changetype: modify
+        add: gidNumber
+        gidNumber: {{ vars_DomainUsersGroup_gid }}
+
+        EOF
+    when: not gidNumber2_exist.stdout.find('gidNumber') != -1
+  - name: Check if msSFU30MaxGidNumber is present in samba
+    shell: "ldbsearch -H /var/lib/samba/private/sam.ldb msSFU30MaxGidNumber"
+    register: MaxGidNumber_exist
+  - name: execute ldbmodify to add MaxGidNumber to samba
+    shell:
+      cmd: |
+        ldbmodify -H /var/lib/samba/private/sam.ldb <<EOF
+        dn: CN={{ vars_workgroup }},CN=ypservers,CN=ypServ30,CN=RpcServices,CN=System,DC={{ vars_workgroup }},DC={{ vars_subdomain }},DC={{ vars_domain }}
+        changetype: modify
+        add: msSFU30MaxGidNumber
+        msSFU30MaxGidNumber: {{ vars_MaxGidNumber }}
+
+        EOF
+    when: not MaxGidNumber_exist.stdout.find('msSFU30MaxGidNumber') != -1
+  - name: Check if msSFU30MaxUidNumber is present in samba
+    shell: "ldbsearch -H /var/lib/samba/private/sam.ldb msSFU30MaxUidNumber"
+    register: MaxUidNumber_exist
+  - name: execute ldbmodify to add MaxUidNumber to samba
+    shell:
+      cmd: |
+        ldbmodify -H /var/lib/samba/private/sam.ldb <<EOF
+        dn: CN={{ vars_workgroup }},CN=ypservers,CN=ypServ30,CN=RpcServices,CN=System,DC={{ vars_workgroup }},DC={{ vars_subdomain }},DC={{ vars_domain }}
+        changetype: modify
+        add: msSFU30MaxUidNumber
+        msSFU30MaxUidNumber: {{ vars_MaxUidNumber }}
+
+        EOF
+    when: not MaxUidNumber_exist.stdout.find('msSFU30MaxUidNumber') != -1
+  - name: Check if samba admin account already exist
+    shell: "ldbsearch -H /var/lib/samba/private/sam.ldb '(CN=admin)' uidNumber gidNumber"
+    register: adminAccount_exist
+  - name: Add admin account if not exist
+    shell: "samba-tool user create admin --given-name='admin' --nis-domain={{ vars_workgroup }} --login-shell='/bin/bash/' --unix-home='/home/admin' --uid-number={{ vars_admin_uid }} --gid-number={{ vars_DomainUsersGroup_gid }} {{ vault_samba_adminuser_pw }}"
+    when: not adminAccount_exist.stdout.find('uidNumber') != -1
+  - name: Add admin user to group domain admins if not exist
+    shell: "samba-tool group addmembers 'Domain Admins' admin"
+    when: not adminAccount_exist.stdout.find('uidNumber') != -1
+
