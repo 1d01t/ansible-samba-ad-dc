@@ -29,8 +29,10 @@ Samba is preconfigured to set roaming profiles for new users.
 Just set the parameter, when creating users
 
 Example of creating a new user:
-samba-tool user create test --surname='test' --given-name='user' --profile-path='\\\\{{ vars_name_sambamember }}\\profiles\\test' --home-drive='H:' --home-directory='\\\\{{ vars_name_sambamember }}\\users\\test' --script-path='login.bat' --nis-domain={{ vars_workgroup }} --login-shell='/bin/bash/' --unix-home='/home/test' --uid-number=10010 --gid-number={{ vars_DomainUsersGroup_gid }} s3cr3tPWforTEST
 
+```bash
+samba-tool user create test --surname='test' --given-name='user' --profile-path='\\\\{{ vars_name_sambamember }}\\profiles\\test' --home-drive='H:' --home-directory='\\\\{{ vars_name_sambamember }}\\users\\test' --script-path='login.bat' --nis-domain={{ vars_workgroup }} --login-shell='/bin/bash/' --unix-home='/home/test' --uid-number=10010 --gid-number={{ vars_DomainUsersGroup_gid }} s3cr3tPWforTEST
+```
 
 Before you can use this project, you habe to set your configs in:
   - hosts
