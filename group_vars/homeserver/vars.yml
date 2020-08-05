@@ -5,17 +5,17 @@
     vars_ip_netmask: 255.255.255.0
     vars_ip_router: 10.10.2.1
 
-    vars_subdomain: subdomain
+    vars_subdomain: samdom
     vars_domain: example.org
-    vars_domain_server: secondsubdomain
+    vars_domain_server: seconddomain.example.org
 
-    vars_realm: SUBDOMAIN.EXAMPLE.ORG
+    vars_realm: SAMDOM.EXAMPLE.COM
     vars_workgroup: SUBDOMAIN
     vars_name_sambamember: m1
     vars_DomainUnixAdminGroup_gid: 10000
     vars_DomainUsersGroup_gid: 10000
-    vars_MaxGidNumber: 12000
-    vars_MaxUidNumber: 12000
+    vars_MaxGidNumber: 19000
+    vars_MaxUidNumber: 19000
     vars_admin_uid: 10001
 
     vars_dns_allowed_subnets: 127.0.0.0/8; 10.10.2.0/24;
