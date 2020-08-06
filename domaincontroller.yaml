@@ -1,6 +1,6 @@
 ---
 #required for pwd hashing --> pip install passlib
-- hosts: dc 
+- hosts: dc
   remote_user: root
   vars: 
     required_packages: 
