@@ -44,7 +44,7 @@ Before you can use this project, you habe to set your configs in:
 secure yourself and encrypt the vault.yml:
   - ansible-vault encrypt group_vars/homeserver/vault.yml
 
-Build your own Nextcloud server
+Build your own Samba-ad-dc server
 ------------
 
 finaly run:
