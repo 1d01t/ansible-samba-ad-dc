@@ -10,7 +10,7 @@
     vars_domain_server: seconddomain.example.org
 
     vars_realm: SAMDOM.EXAMPLE.COM
-    vars_workgroup: SUBDOMAIN
+    vars_workgroup: SAMDON
     vars_name_sambamember: m1
     vars_DomainUnixAdminGroup_gid: 10000
     vars_DomainUsersGroup_gid: 10000
